@@ -1,0 +1,20 @@
+{
+  "input": "C:\\Users\\Vanshika Munjal\\Desktop\\Red Herring Prospectus.docx",
+  "output": "output\\real_rhp_redacted.docx",
+  "output_reopened": true,
+  "input_sha256": "8b5c93f7642d659e64b51be9f6172c86c2825417f376ca1800ed331515e6f929",
+  "output_sha256": "b7840a95288d693ad225ac2b48727debf5f9f0a77324f8fce8095a126a0a1232",
+  "paragraph_like_units_checked": 4864,
+  "prediction_count": 584,
+  "distinct_predicted_values": 257,
+  "residual_original_value_count": 0,
+  "residual_original_values": [],
+  "residual_note": "values are described by shape and location only; no source value is printed",
+  "hyperlink_relationships_checked": 0,
+  "hyperlink_endpoints": [],
+  "stale_original_email_hyperlink_count": 0,
+  "stale_original_email_hyperlink_endpoints": [],
+  "hyperlink_field_codes_checked": 105,
+  "stale_original_email_field_code_count": 0,
+  "passed": true
+}

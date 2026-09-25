@@ -4,3 +4,12 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# Real-document evaluation artefacts.  These reproduce original values from the
+# source RHP by design, so they are regenerated locally with the commands in
+# README.md rather than committed.  The redacted DOCX is safe to share and is
+# tracked; the annotation and prediction JSON files are not.
+evaluation/real_rhp_ground_truth.json
+evaluation/real_rhp_predictions.json
+evaluation/real_rhp_ground_truth.local.json
+output/real_rhp_redacted*.docx.bak

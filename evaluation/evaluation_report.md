@@ -73,6 +73,8 @@ Nested structured matches are resolved before scoring: a complete address suppre
 
 ## 6. Error Analysis
 
+Entity values are never printed in this report. Each item below is described by category, span shape, size, and location only, so the report can be shared without disclosing the underlying data.
+
 No false positives were observed in the supplied ground-truth set.
 
 No false negatives were observed in the supplied ground-truth set.

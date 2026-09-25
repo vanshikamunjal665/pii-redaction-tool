@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .detectors import PIIDetector
-from .document_processor import redact_document
+from .document_processor import contains_original_value, redact_document
 from .evaluation import evaluate_files, write_report
 from .replacers import ReplacementRegistry
 
@@ -61,16 +61,29 @@ def run(args: argparse.Namespace) -> int:
 
     # Reopen/read output and perform a conservative residual-value check.  A
     # value can legitimately occur in non-PII prose, so this is reported as a
-    # warning rather than silently changing the prediction set.
+    # warning rather than silently changing the prediction set.  Matching is
+    # whole-value, so an entity fragment that also occurs inside an ordinary
+    # word is not counted.  This quick check covers extracted text only;
+    # ``tools/verify_output.py`` additionally inspects the package XML and
+    # hyperlink targets.
     output_text = "\n".join(unit.text for unit in result.redacted_units)
-    originals = {entity.text.casefold() for entity in result.predictions}
-    residual = sorted(value for value in originals if value in output_text.casefold())
+    residual = sorted(
+        {
+            entity.identity or entity.text
+            for entity in result.predictions
+            if contains_original_value(output_text, entity.identity or entity.text)
+        }
+    )
     print(f"Input: {input_path}")
     print(f"Output: {output_path}")
     print(f"Predictions written: {predictions_path} ({len(predictions)} entities)")
     print(f"Output reopened successfully; residual original-value matches: {len(residual)}")
     if residual:
-        print("Warning: review residual values; they may occur in non-PII context or in a nested structure.")
+        print(
+            "Warning: some original values still occur in the extracted text. "
+            "Run tools/verify_output.py to locate them (it reports locations, "
+            "not values)."
+        )
 
     if args.ground_truth:
         evaluation = evaluate_files(args.ground_truth, predictions_path)

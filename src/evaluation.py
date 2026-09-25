@@ -54,8 +54,8 @@ class CategoryMetrics:
         denominator = self.ground_truth + self.false_positive
         return self.true_positive / denominator if denominator else None
 
-    def as_dict(self) -> dict[str, Any]:
-        return {
+    def as_dict(self, include_examples: bool = False) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "type": self.pii_type.value,
             "ground_truth": self.ground_truth,
             "detected": self.detected,
@@ -66,9 +66,11 @@ class CategoryMetrics:
             "recall": self.recall,
             "f1": self.f1,
             "accuracy": self.accuracy,
-            "unmatched_ground_truth": self.unmatched_ground_truth,
-            "unmatched_predictions": self.unmatched_predictions,
         }
+        if include_examples:
+            payload["unmatched_ground_truth"] = self.unmatched_ground_truth
+            payload["unmatched_predictions"] = self.unmatched_predictions
+        return payload
 
 
 @dataclass
@@ -110,7 +112,15 @@ class EvaluationResult:
         denominator = totals["ground_truth"] + totals["FP"]
         return totals["TP"] / denominator if denominator else None
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self, include_examples: bool = False) -> dict[str, Any]:
+        """Return the machine-readable summary.
+
+        Unmatched entity values are omitted by default: the JSON is printed
+        to stdout and frequently pasted into tickets, so it must not carry
+        the source data.  ``include_examples=True`` is available for local
+        debugging only.
+        """
+
         return {
             "metadata": self.metadata,
             "matching_policy": {
@@ -120,6 +130,7 @@ class EvaluationResult:
                 "location": "part/unit and context used to disambiguate repeats",
                 "overlap": "detector resolves complete structured spans before scoring",
                 "accuracy": "TP/(GT+FP), an open-world entity-decision accuracy; no artificial TN",
+                "examples": "unmatched values are omitted unless include_examples is set",
             },
             "overall": {
                 **self.totals,
@@ -128,7 +139,10 @@ class EvaluationResult:
                 "f1": self.f1,
                 "accuracy": self.accuracy,
             },
-            "per_type": {key.value: value.as_dict() for key, value in self.per_type.items()},
+            "per_type": {
+                key.value: value.as_dict(include_examples=include_examples)
+                for key, value in self.per_type.items()
+            },
         }
 
 
@@ -290,6 +304,52 @@ def _percent(value: Optional[float]) -> str:
     return "N/A" if value is None else f"{value:.1%}"
 
 
+def _value_shape(value: str) -> str:
+    """Describe a span's shape without reproducing its value.
+
+    Reports are review artifacts that get shared around, so an unmatched
+    entity is described by token classes and counts only.  Nothing derived
+    from the characters themselves (names, e-mail local parts, digits) is
+    printed.
+    """
+
+    letters = sum(1 for char in value if char.isalpha())
+    digits = sum(1 for char in value if char.isdigit())
+    if "@" in value:
+        shape = "email-shaped value"
+    elif letters == 0:
+        shape = "numeric value"
+    else:
+        classes: list[str] = []
+        for token in value.split():
+            stripped = token.strip(".,;:()[]'\u2019\"")
+            if not stripped:
+                continue
+            if len(stripped) > 1 and stripped.isupper():
+                classes.append("CAPS")
+            elif re.fullmatch(r"[A-Za-z]\.", stripped):
+                classes.append("initial")
+            elif stripped[:1].isalpha() and stripped[:1].isupper():
+                classes.append("Capitalized")
+            else:
+                classes.append("lower")
+        shape = f"{len(classes)} token(s) [{'/'.join(classes) or 'none'}]"
+    return f"{shape}, {letters} letters, {digits} digits, {len(value)} chars"
+
+
+def _describe_item(item: dict[str, Any]) -> str:
+    """Return a reviewable, value-free description of an unmatched entity."""
+
+    parts = [str(item.get("type", "?"))]
+    parts.append(_value_shape(str(item.get("text", ""))))
+    location = _location(item) or str(item.get("part", "unknown"))
+    parts.append(f"at {location}")
+    detector = item.get("detector")
+    if detector:
+        parts.append(f"via {detector}")
+    return " | ".join(parts)
+
+
 def write_report(result: EvaluationResult, output_path: str | Path) -> None:
     metadata = result.metadata
     totals = result.totals
@@ -388,18 +448,24 @@ def write_report(result: EvaluationResult, output_path: str | Path) -> None:
     for item in result.per_type.values():
         representative_fps.extend(item.unmatched_predictions)
         representative_fns.extend(item.unmatched_ground_truth)
+    lines.append(
+        "Entity values are never printed in this report. Each item below is "
+        "described by category, span shape, size, and location only, so the "
+        "report can be shared without disclosing the underlying data."
+    )
+    lines.append("")
     if representative_fps:
-        lines.append("Representative false positives:")
+        lines.append(f"False positives ({len(representative_fps)} total, up to 20 shown):")
         for item in representative_fps[:20]:
-            lines.append(f"- `{item.get('type')}`: `{item.get('text')}` in `{item.get('part', 'unknown')}`")
+            lines.append(f"- {_describe_item(item)}")
         lines.append("")
     else:
         lines.append("No false positives were observed in the supplied ground-truth set.")
         lines.append("")
     if representative_fns:
-        lines.append("Representative false negatives:")
+        lines.append(f"False negatives ({len(representative_fns)} total, up to 20 shown):")
         for item in representative_fns[:20]:
-            lines.append(f"- `{item.get('type')}`: `{item.get('text')}` in `{item.get('part', 'unknown')}`")
+            lines.append(f"- {_describe_item(item)}")
         lines.append("")
     else:
         lines.append("No false negatives were observed in the supplied ground-truth set.")
@@ -429,10 +495,21 @@ def main() -> int:
     parser.add_argument("--ground-truth", required=True)
     parser.add_argument("--predictions", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--include-examples",
+        action="store_true",
+        help="print unmatched entity values on stdout (local debugging only)",
+    )
     args = parser.parse_args()
     result = evaluate_files(args.ground_truth, args.predictions)
     write_report(result, args.output)
-    print(json.dumps(result.as_dict(), indent=2, ensure_ascii=False))
+    print(
+        json.dumps(
+            result.as_dict(include_examples=args.include_examples),
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 

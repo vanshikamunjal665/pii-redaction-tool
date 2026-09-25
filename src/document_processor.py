@@ -11,7 +11,7 @@ from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml.ns import qn
 
-from .detectors import DOB_CONTEXT_RE, PIIDetector
+from .detectors import DOB_CONTEXT_RE, PIIDetector, resolve_overlaps
 from .models import Entity, PIIType, TextUnit
 from .replacers import ReplacementRegistry
 
@@ -176,20 +176,490 @@ def extract_docx_text(path: str | Path) -> str:
 def _update_hyperlink_targets(
     document: Any, email_replacements: dict[str, str]
 ) -> None:
+    """Update both relationship targets and Word field-code mailto links.
+
+    Word documents produced by several office suites store a hyperlink either
+    as an external relationship or as a ``HYPERLINK "mailto:..."`` field
+    instruction inside ``w:instrText``.  Redacting only the former leaves the
+    original address in the package XML even when the visible text is clean.
+    """
+
     if not email_replacements:
         return
-    for _part_name_value, part, _element in _iter_part_elements(document):
+    substitutions = tuple(
+        (re.compile(re.escape(original), re.IGNORECASE), replacement)
+        for original, replacement in email_replacements.items()
+    )
+
+    def updated_value(value: str) -> str:
+        for pattern, replacement in substitutions:
+            value = pattern.sub(replacement, value)
+        return value
+
+    for _part_name_value, part, element in _iter_part_elements(document):
         for relationship in list(getattr(part, "rels", {}).values()):
             if getattr(relationship, "reltype", "") != RT.HYPERLINK:
                 continue
             target = getattr(relationship, "target_ref", "")
-            updated = target
-            for original, replacement in email_replacements.items():
-                updated = re.sub(re.escape(original), replacement, updated, flags=re.IGNORECASE)
+            updated = updated_value(target)
             if updated != target:
                 # python-docx's relationship object stores the external target
                 # in _target; assigning it preserves the relationship ID.
                 relationship._target = updated
+
+        for node in element.iter():
+            if node.tag == qn("w:instrText") and node.text:
+                node.text = updated_value(node.text)
+            # ``w:fldSimple`` can carry the instruction in an attribute instead
+            # of a child text node.
+            for attribute in (qn("w:instr"), "instr"):
+                value = node.get(attribute)
+                if value:
+                    node.set(attribute, updated_value(value))
+
+
+def _neighbor_context(units: list[_DocxUnit], index: int, window: int = 2) -> str:
+    """Return a short rolling context for adjacent DOCX table cells.
+
+    A two-cell window is enough for labels/values split by table structure,
+    while avoiding the document-wide address/person hints that caused false
+    positives in the first real-RHP pass.  Newlines preserve logical unit
+    boundaries for the contextual detectors.
+    """
+
+    recent = [unit.text for unit in units[max(0, index - window) : index] if unit.text]
+    return "\n".join(recent)[-800:]
+
+
+def _value_pattern(value: str) -> Optional[str]:
+    """Build a whole-value pattern; internal whitespace is matched loosely.
+
+    Lookarounds are used instead of ``\\b`` so values that start or end with a
+    non-word character (a phone number with a ``+`` prefix, a house number) are
+    handled as well.
+    """
+
+    parts = [re.escape(part) for part in value.strip().split()]
+    if not parts:
+        return None
+    return rf"(?<![A-Za-z0-9_]){r'\s+'.join(parts)}(?![A-Za-z0-9_])"
+
+
+def contains_original_value(haystack: str, value: str) -> bool:
+    """Return whether ``value`` survives in ``haystack`` as a whole value.
+
+    A plain substring test produces false alarms that hide real ones: the
+    redacted fragment ``Broad`` (from a promoter name split across two table
+    cells) occurs inside the ordinary words ``abroad`` and ``broader`` in the
+    risk factors, while a genuine leak inside a longer word would still be
+    reported.  Matching whole values keeps the residual check meaningful.
+    """
+
+    pattern = _value_pattern(value)
+    return pattern is not None and bool(re.search(pattern, haystack, re.IGNORECASE))
+
+
+def _known_value_pattern(value: str) -> Optional[re.Pattern[str]]:
+    """Build a whitespace/case-insensitive pattern for document propagation."""
+
+    value = value.strip()
+    if not value:
+        return None
+    # Keep periods in initials (``B.``) and punctuation in legal names, but
+    # compare tokens across tabs, line-wrap whitespace, and capitalization.
+    tokens = re.findall(r"[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*\.?", value)
+    if not tokens:
+        return None
+    if "&" in value:
+        separator = r"(?:\s*&\s*)"
+    else:
+        separator = r"\s+"
+    return re.compile(
+        r"(?<![A-Za-z0-9])" + separator.join(re.escape(token) for token in tokens) + r"(?![A-Za-z0-9])",
+        flags=re.IGNORECASE,
+    )
+
+
+def _token_pattern(tokens: list[str]) -> Optional[re.Pattern[str]]:
+    if len(tokens) < 2:
+        return None
+    joined = r"\s+".join(re.escape(token) for token in tokens)
+    return re.compile(rf"(?<![A-Za-z0-9]){joined}(?![A-Za-z0-9])", re.IGNORECASE)
+
+
+# A one-token half of a split name (``DHAULAGIRI`` | ``FAMILY TRUST``) is only
+# accepted when that token is a distinctive capitalised word.  Generic legal and
+# prospectus words are excluded so an ordinary neighbouring cell is never
+# redacted just because it happens to sit next to the other half.
+CROSS_UNIT_STOP_WORDS = frozenset(
+    {
+        "and", "the", "for", "its", "new", "not", "one", "our", "two", "of",
+        "any", "all", "are", "has", "his", "her", "per", "was", "who", "will",
+        "bank", "capital", "company", "corporate", "finance", "financial",
+        "group", "holdings", "india", "industries", "international",
+        "limited", "national", "private", "public", "services", "state",
+        "trust", "llp", "llc", "inc", "corp", "pvt", "sri", "smt", "mr",
+        "mrs", "ms", "dr", "prof", "m/s", "s/o", "w/o", "l td", "p ltd",
+    }
+)
+
+
+def _is_boundary_token(token: str, unit_text: str) -> bool:
+    """Return whether a single token can stand as one half of a split name."""
+
+    bare = token.rstrip(".").casefold()
+    if len(bare) < 3 or bare in CROSS_UNIT_STOP_WORDS:
+        return False
+    # The token has to be capitalised in the unit it would be redacted from;
+    # lower-case prose is not half of a name.  The search is case-insensitive
+    # because the seeded value may be the all-caps variant of the name, but the
+    # source spelling is what decides.
+    match = re.search(
+        rf"(?<![A-Za-z0-9]){re.escape(token)}", unit_text, re.IGNORECASE
+    )
+    return match is not None and match.group(0)[:1].isupper()
+
+
+def _cross_unit_fragments(
+    left_text: str,
+    right_text: str,
+    value: str,
+    pii_type: PIIType,
+    left_part: str,
+    right_part: str,
+) -> list[tuple[str, int, int, str, int, int]]:
+    """Return matching left/right fragments for a value split at a unit edge."""
+
+    # Ampersands and punctuation-heavy legal names are better handled inside a
+    # single unit.  The cross-unit pass targets the common table/line-wrap
+    # break between ordinary name tokens.
+    if "&" in value:
+        return []
+    tokens = re.findall(r"[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*\.?", value)
+    if len(tokens) < 2:
+        return []
+    results: list[tuple[str, int, int, str, int, int]] = []
+    for split in range(1, len(tokens)):
+        left_tokens = tokens[:split]
+        right_tokens = tokens[split:]
+        left_pattern = _token_pattern(left_tokens)
+        right_pattern = _token_pattern(right_tokens)
+        if left_pattern is None:
+            if not (len(left_tokens) == 1 and _is_boundary_token(left_tokens[0], left_text)):
+                continue
+            left_pattern = re.compile(
+                rf"(?<![A-Za-z0-9]){re.escape(left_tokens[0])}", re.IGNORECASE
+            )
+        if right_pattern is None:
+            if not (len(right_tokens) == 1 and _is_boundary_token(right_tokens[0], right_text)):
+                continue
+            right_pattern = re.compile(
+                rf"(?<![A-Za-z0-9]){re.escape(right_tokens[0])}", re.IGNORECASE
+            )
+        left_match = re.search(
+            left_pattern.pattern + r"\s*[,;]?\s*$", left_text, re.IGNORECASE
+        )
+        right_match = re.match(r"\s*" + right_pattern.pattern, right_text, re.IGNORECASE)
+        if left_match is None or right_match is None:
+            continue
+        # A boundary match must not be part of a structured value.
+        left_start, left_end = left_match.span()
+        right_start, right_end = right_match.span()
+        left_context = left_text[max(0, left_start - 12) : left_end + 12]
+        right_context = right_text[max(0, right_start - 12) : right_end + 12]
+        if "@" in left_context or "@" in right_context or "://" in left_context + right_context:
+            continue
+        results.append(
+            (
+                left_text[left_start:left_end],
+                left_start,
+                left_end,
+                right_text[right_start:right_end],
+                right_start,
+                right_end,
+            )
+        )
+    return results
+
+
+# A table can lay a single name out one token per cell ("KSH" | "Distriparks" |
+# "Private Limited") or wrap it over several paragraphs inside one cell.  The
+# window pass only accepts a value that appears whole across consecutive units,
+# so unrelated neighbouring cells are never swept in.
+CROSS_UNIT_MAX_WINDOW = 6
+
+
+def _cross_unit_window_fragments(
+    unit_texts: list[str], combined: Optional[re.Pattern[str]], named: dict[str, tuple[str, PIIType]]
+) -> list[tuple[int, list[tuple[int, int, int]], str]]:
+    """Find values laid out across consecutive units.
+
+    Returns ``(first_unit_index, [(index, start, end), ...], value)`` triples.
+    Only the first and last unit of a match may contribute a partial span; every
+    unit in between must be consumed completely, which is what distinguishes a
+    name split across cells from two unrelated cells that happen to be
+    adjacent.
+    """
+
+    if combined is None:
+        return []
+    results: list[tuple[int, list[tuple[int, int, int]], str]] = []
+    for start_index in range(len(unit_texts)):
+        for width in range(2, min(CROSS_UNIT_MAX_WINDOW, len(unit_texts) - start_index) + 1):
+            window = unit_texts[start_index : start_index + width]
+            joined = " ".join(window)
+            bounds: list[tuple[int, int]] = []
+            cursor = 0
+            for text in window:
+                bounds.append((cursor, cursor + len(text)))
+                cursor += len(text) + 1
+            for match in combined.finditer(joined):
+                group = match.lastgroup
+                if group is None or group not in named:
+                    continue
+                first = last = -1
+                for position, (begin, end) in enumerate(bounds):
+                    if begin <= match.start() < end:
+                        first = position
+                    if begin <= match.end() - 1 < end:
+                        last = position
+                if first < 0 or last < first:
+                    continue
+                if any(
+                    not (match.start() <= bounds[middle][0] and bounds[middle][1] <= match.end())
+                    for middle in range(first + 1, last)
+                ):
+                    continue
+                fragments: list[tuple[int, int, int]] = []
+                for position in range(first, last + 1):
+                    begin, end = bounds[position]
+                    fragments.append(
+                        (
+                            start_index + position,
+                            max(match.start(), begin) - begin,
+                            min(match.end(), end) - begin,
+                        )
+                    )
+                if not all(unit_texts[index][start:end].strip() for index, start, end in fragments):
+                    continue
+                results.append((start_index, fragments, named[group][0]))
+    return results
+
+
+def _propagate_document_values(
+    units: list[_DocxUnit], detections: list[list[Entity]]
+) -> list[list[Entity]]:
+    """Propagate high-confidence names/entities across formatting variants.
+
+    RHP tables often put a person's name in one run in title case and repeat
+    it in another run in all caps.  A first pass supplies reliable seeds from
+    labelled/role/table contexts; the second pass finds exact repetitions of
+    those values without broadening the generic person scanner to arbitrary
+    capitalized prose.  A final boundary pass covers a value split between two
+    adjacent paragraph/table-cell units.
+    """
+
+    person_values: dict[str, str] = {}
+    organization_values: dict[str, str] = {}
+    for entities in detections:
+        for entity in entities:
+            value = re.sub(r"\s+", " ", entity.text).strip()
+            key = value.casefold()
+            if entity.pii_type == PIIType.PERSON and entity.detector in {
+                "context-name",
+                "role-name",
+                "title-name",
+                "table-name",
+            }:
+                if len(value.split()) >= 2:
+                    person_values.setdefault(key, value)
+            elif entity.pii_type == PIIType.ORG and entity.detector in {
+                "legal-suffix",
+                "legal-suffix-caps",
+                "business-suffix",
+                "business-suffix-caps",
+                "organization-list",
+            }:
+                # Do not propagate a merged list or a conjunction-prefixed
+                # fragment.  The detector's per-entity pass still handles it.
+                if (
+                    len(value.split()) >= 2
+                    and not re.search(r"(?i)\band\b", value)
+                    and not value.casefold().startswith(("and ", "or "))
+                ):
+                    organization_values.setdefault(key, value)
+
+    propagated: list[list[Entity]] = []
+    for unit, entities in zip(units, detections):
+        additions: list[Entity] = []
+        occupied = [(entity.start, entity.end) for entity in entities]
+        for value, pii_type, source in (
+            *[(item, PIIType.PERSON, "document-person") for item in person_values.values()],
+            *[(item, PIIType.ORG, "document-organization") for item in organization_values.values()],
+        ):
+            pattern = _known_value_pattern(value)
+            if pattern is None:
+                continue
+            for match in pattern.finditer(unit.text):
+                start, end = match.span()
+                if any(start < old_end and old_start < end for old_start, old_end in occupied):
+                    continue
+                left = unit.text[max(0, start - 2) : start]
+                right = unit.text[end : end + 2]
+                # Do not treat a name-like substring of an email/URL as a
+                # separate entity.  Structured detectors own those values.
+                if "@" in left or "@" in right or "://" in unit.text[max(0, start - 12) : end + 12]:
+                    continue
+                additions.append(
+                    Entity(
+                        text=unit.text[start:end],
+                        pii_type=pii_type,
+                        start=start,
+                        end=end,
+                        part=unit.unit_id,
+                        context=unit.text[max(0, start - 90) : min(len(unit.text), end + 90)],
+                        score=0.99,
+                        detector=source,
+                        identity=value,
+                    )
+                )
+                occupied.append((start, end))
+        propagated.append(resolve_overlaps([*entities, *additions]))
+
+    # Handle logical values split at an adjacent-unit boundary.  Each side is
+    # emitted as a local span so the DOCX replacement remains paragraph-safe;
+    # the shared identity keeps the synthetic replacement deterministic.
+    cross_values = [
+        *[(value, PIIType.PERSON) for value in person_values.values()],
+        *[(value, PIIType.ORG) for value in organization_values.values()],
+    ]
+    for index in range(len(units) - 1):
+        left_unit = units[index]
+        right_unit = units[index + 1]
+        left_additions: list[Entity] = []
+        right_additions: list[Entity] = []
+        left_occupied = [(entity.start, entity.end) for entity in propagated[index]]
+        right_occupied = [(entity.start, entity.end) for entity in propagated[index + 1]]
+        for value, pii_type in cross_values:
+            for (
+                left_text,
+                left_start,
+                left_end,
+                right_text,
+                right_start,
+                right_end,
+            ) in _cross_unit_fragments(
+                left_unit.text,
+                right_unit.text,
+                value,
+                pii_type,
+                left_unit.unit_id,
+                right_unit.unit_id,
+            ):
+                if any(
+                    left_start < old_end and old_start < left_end
+                    for old_start, old_end in left_occupied
+                ) or any(
+                    right_start < old_end and old_start < right_end
+                    for old_start, old_end in right_occupied
+                ):
+                    continue
+                left_additions.append(
+                    Entity(
+                        text=left_text,
+                        pii_type=pii_type,
+                        start=left_start,
+                        end=left_end,
+                        part=left_unit.unit_id,
+                        context=left_unit.text[
+                            max(0, left_start - 90) : min(len(left_unit.text), left_end + 90)
+                        ],
+                        score=0.98,
+                        detector="document-cross-unit",
+                        identity=value,
+                    )
+                )
+                right_additions.append(
+                    Entity(
+                        text=right_text,
+                        pii_type=pii_type,
+                        start=right_start,
+                        end=right_end,
+                        part=right_unit.unit_id,
+                        context=right_unit.text[
+                            max(0, right_start - 90) : min(len(right_unit.text), right_end + 90)
+                        ],
+                        score=0.98,
+                        detector="document-cross-unit",
+                        identity=value,
+                    )
+                )
+                left_occupied.append((left_start, left_end))
+                right_occupied.append((right_start, right_end))
+        if left_additions:
+            propagated[index] = resolve_overlaps([*propagated[index], *left_additions])
+        if right_additions:
+            propagated[index + 1] = resolve_overlaps(
+                [*propagated[index + 1], *right_additions]
+            )
+
+    # Finally, cover a value laid out over three or more consecutive units, and
+    # a two-unit value whose halves are both at a unit boundary.  One combined
+    # pattern keeps the scan linear in the number of units.
+    named: dict[str, tuple[str, PIIType]] = {}
+    alternatives: list[str] = []
+    for position, (value, pii_type) in enumerate(cross_values):
+        pattern = _value_pattern(value)
+        if pattern is None:
+            continue
+        group = f"v{position}"
+        named[group] = (value, pii_type)
+        alternatives.append(f"(?P<{group}>{pattern})")
+    combined = (
+        re.compile("|".join(alternatives), re.IGNORECASE) if alternatives else None
+    )
+    unit_texts = [unit.text for unit in units]
+    for _, fragments, value_text in _cross_unit_window_fragments(unit_texts, combined, named):
+        pii_type = next(
+            pii_type for value, pii_type in cross_values if value == value_text
+        )
+        if any(
+            start < entity.end and entity.start < end
+            for index, start, end in fragments
+            for entity in propagated[index]
+        ):
+            continue
+        for index, start, end in fragments:
+            text = unit_texts[index]
+            propagated[index] = resolve_overlaps(
+                [
+                    *propagated[index],
+                    Entity(
+                        text=text[start:end],
+                        pii_type=pii_type,
+                        start=start,
+                        end=end,
+                        part=units[index].unit_id,
+                        context=text[max(0, start - 90) : min(len(text), end + 90)],
+                        score=0.98,
+                        detector="document-cross-unit",
+                        identity=value_text,
+                    ),
+                ]
+            )
+
+    return propagated
+
+
+def _reserved_values(entities: Iterable[Entity]) -> list[str]:
+    """Collect every detected source value a replacement must not reproduce."""
+
+    values: list[str] = []
+    for entity in entities:
+        values.append(entity.text)
+        if entity.identity:
+            values.append(entity.identity)
+    return values
 
 
 def redact_docx(
@@ -220,14 +690,26 @@ def redact_docx(
     predictions: list[Entity] = []
     email_replacements: dict[str, str] = {}
 
+    # Detect first, then propagate only high-confidence values across nearby
+    # table cells/runs.  This keeps every replacement span local to its source
+    # text unit while recovering names and organizations repeated in a
+    # different capitalization or run layout.
+    detections: list[list[Entity]] = []
     for index, unit in enumerate(units):
-        # Table labels and values are separate paragraphs/units in DOCX.  A
-        # narrow DOB label immediately before a value is supplied as context;
-        # no arbitrary neighbouring text is used.
-        context_prefix = ""
-        if index > 0 and DOB_CONTEXT_RE.search(units[index - 1].text):
-            context_prefix = units[index - 1].text
-        entities = detector.detect(unit.text, unit.unit_id, context_prefix=context_prefix)
+        context_prefix = _neighbor_context(units, index)
+        detections.append(detector.detect(unit.text, unit.unit_id, context_prefix=context_prefix))
+    detections = _propagate_document_values(units, detections)
+
+    # Replacements are generated from a seeded pool, and a generated value can
+    # coincide with a real value elsewhere in the document (for example a
+    # person name the generator happens to produce).  Reserving every detected
+    # value makes that impossible, so verifying "no original value remains" by
+    # plain text search is sound.
+    registry.reserve(
+        _reserved_values(entity for entities in detections for entity in entities)
+    )
+
+    for unit, entities in zip(units, detections):
         # Apply right-to-left so offsets in the original unit remain valid.
         for entity in sorted(entities, key=lambda item: (item.start, item.end), reverse=True):
             replacement = registry.replacement_for(entity)
@@ -290,9 +772,15 @@ def redact_pdf(
     registry = registry or ReplacementRegistry()
     source_units = _pdf_page_units(source)
     document = Document()
+    per_unit: list[list[Entity]] = [
+        detector.detect(unit.text, unit.unit_id) for unit in source_units
+    ]
+    # See ``redact_docx``: replacements must never reproduce a detected value.
+    registry.reserve(
+        _reserved_values(entity for entities in per_unit for entity in entities)
+    )
     predictions: list[Entity] = []
-    for unit in source_units:
-        entities = detector.detect(unit.text, unit.unit_id)
+    for unit, entities in zip(source_units, per_unit):
         redacted, _ = registry.redact_text(unit.text, entities)
         predictions.extend(entities)
         document.add_heading(f"Source page {unit.unit_id.split('-')[-1]}", level=2)

@@ -168,7 +168,11 @@ class ReplacementRegistry:
     in a minimal offline installation.
     """
 
-    def __init__(self, seed: int = 1337) -> None:
+    def __init__(
+        self,
+        seed: int = 1337,
+        reserved: Optional[Iterable[str]] = None,
+    ) -> None:
         self.seed = seed
         self._faker = None
         if Faker is not None:
@@ -180,6 +184,23 @@ class ReplacementRegistry:
         self._mapping: dict[tuple[PIIType, str], str] = {}
         self._used: dict[PIIType, set[str]] = {pii_type: set() for pii_type in PIIType}
         self._address_index = 0
+        # Original document values are reserved so a generated replacement can
+        # never coincide with real data.  Without this, a seeded generator may
+        # pick the very name it is meant to replace, leaving the original value
+        # in the output.
+        self._reserved: set[str] = set()
+        if reserved is not None:
+            self.reserve(reserved)
+
+    def reserve(self, values: Iterable[str]) -> None:
+        """Record original values that replacements must never reproduce."""
+
+        for value in values:
+            if value and value.strip():
+                self._reserved.add(_normalise_key(value))
+
+    def _conflicts_with_reserved(self, candidate: str) -> bool:
+        return _normalise_key(candidate) in self._reserved
 
     @property
     def mapping(self) -> dict[tuple[PIIType, str], str]:
@@ -191,6 +212,11 @@ class ReplacementRegistry:
 
     @staticmethod
     def _mapping_key(entity: Entity) -> tuple[PIIType, str]:
+        # Cross-unit fragments carry the full logical identity so a name split
+        # over two DOCX paragraphs receives the same deterministic replacement
+        # as its intact occurrences.
+        if entity.identity:
+            return entity.pii_type, _normalise_key(entity.identity)
         if entity.pii_type in {
             PIIType.PHONE,
             PIIType.SSN,
@@ -265,6 +291,7 @@ class ReplacementRegistry:
             if (
                 candidate.casefold() != original_key
                 and candidate.casefold() not in self._used[PIIType.PERSON]
+                and not self._conflicts_with_reserved(candidate)
             ):
                 return candidate
         return f"Example Person {len(self._used[PIIType.PERSON]) + 1}"
@@ -277,6 +304,7 @@ class ReplacementRegistry:
         while (
             candidate.casefold() in self._used[PIIType.EMAIL]
             or candidate.casefold() == _normalise_key(original)
+            or self._conflicts_with_reserved(candidate)
         ):
             candidate = f"{local}{suffix}@example.com"
             suffix += 1
@@ -294,6 +322,7 @@ class ReplacementRegistry:
             if (
                 candidate.casefold() not in self._used[PIIType.ORG]
                 and candidate.casefold() != original_key
+                and not self._conflicts_with_reserved(candidate)
             ):
                 self._address_index += 1
                 return candidate
@@ -307,6 +336,7 @@ class ReplacementRegistry:
             if (
                 candidate.casefold() not in self._used[PIIType.ADDRESS]
                 and _normalise_key(candidate) != original_key
+                and not self._conflicts_with_reserved(candidate)
             ):
                 self._address_index += 1
                 return candidate

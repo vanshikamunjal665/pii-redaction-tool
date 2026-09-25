@@ -2,14 +2,21 @@
   "input": "input\\synthetic_rhp_fixture.docx",
   "output": "output\\redacted_rhp.docx",
   "output_reopened": true,
+  "input_sha256": "2cb5c6183074ff6ea6e20a583691b39c6f608d7265f956392f475cf646c4d068",
+  "output_sha256": "2bb6497b5bd1488fa52aeead7a910ed7d7a489e44700be12cc38cb2992a6647f",
   "paragraph_like_units_checked": 49,
   "prediction_count": 26,
+  "distinct_predicted_values": 13,
+  "residual_original_value_count": 0,
   "residual_original_values": [],
-  "text_residual_original_values": [],
-  "package_xml_residual_original_values": [],
-  "hyperlink_targets_checked": [
-    "mailto:jagvi.morar@example.com"
+  "residual_note": "values are described by shape and location only; no source value is printed",
+  "hyperlink_relationships_checked": 1,
+  "hyperlink_endpoints": [
+    "mailto://example.com"
   ],
-  "stale_original_email_hyperlinks": [],
+  "stale_original_email_hyperlink_count": 0,
+  "stale_original_email_hyperlink_endpoints": [],
+  "hyperlink_field_codes_checked": 0,
+  "stale_original_email_field_code_count": 0,
   "passed": true
 }

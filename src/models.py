@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 
 class PIIType(str, Enum):
@@ -51,6 +51,11 @@ class Entity:
     context: str = ""
     score: float = 1.0
     detector: str = "regex"
+    # Optional document-level identity used when one logical value is laid out
+    # across two or more text units.  A fragment such as ``Distriparks`` is not
+    # a value on its own, so residual verification checks the identity: the
+    # original value must be absent, not every piece of it.
+    identity: Optional[str] = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation."""
@@ -64,6 +69,7 @@ class Entity:
             "context": self.context,
             "score": self.score,
             "detector": self.detector,
+            "identity": self.identity,
         }
 
 
