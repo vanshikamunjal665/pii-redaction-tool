@@ -5,6 +5,12 @@ __pycache__/
 venv/
 .DS_Store
 
+# Word owner/lock files.  These appear as `~$<name>.docx` next to a document
+# while it is open in Word and are not part of the project.
+~$*
+~$*.docx
+~$*.docx~
+
 # Real-document evaluation artefacts.  These reproduce original values from the
 # source RHP by design, so they are regenerated locally with the commands in
 # README.md rather than committed.  The redacted DOCX is safe to share and is
@@ -13,3 +19,16 @@ evaluation/real_rhp_ground_truth.json
 evaluation/real_rhp_predictions.json
 evaluation/real_rhp_ground_truth.local.json
 output/real_rhp_redacted*.docx.bak
+
+# The real source document, when kept inside the project so the reproduction
+# commands work with a relative path.  The whole folder is ignored, not just one
+# filename, so a second RHP cannot slip in untracked.  A local override file can
+# un-ignore the folder without editing this one:
+#   git update-index --skip-worktree .gitignore   (or use a .gitignore.local)
+# The source itself is untracked on purpose; `--no-spacy` runs read it read-only
+# and never write to it.
+# Ignore the folder's *contents* rather than the folder itself.  Excluding the
+# directory outright would stop git descending into it, and the `!` exemption for
+# the tracked README below would never be evaluated.
+input/real/*
+!input/real/README.md
