@@ -129,33 +129,6 @@ of more false positives. PDF extraction can lose layout and reading order — th
 output preserves extracted text and page boundaries, not the original visual
 design. Synthetic replacement values are non-production by design.
 
-## Reproduce
-
-```bash
-python -m pip install -r requirements.txt
-python -m pytest -q
-
-# synthetic fixture
-python run.py --input input/synthetic_rhp_fixture.docx --output output/redacted_rhp.docx \
-  --predictions evaluation/predictions.json --ground-truth evaluation/ground_truth.json \
-  --report evaluation/evaluation_report.md --no-spacy
-
-# real document (input/real/ is gitignored; the file is never modified)
-python run.py --input input/real/rhp.docx --output output/real_rhp_redacted.docx \
-  --predictions evaluation/real_rhp_predictions.json --no-spacy
-python -m src.evaluation --ground-truth evaluation/real_rhp_ground_truth.json \
-  --predictions evaluation/real_rhp_predictions.json \
-  --output evaluation/real_rhp_evaluation_report.md
-python tools/verify_output.py --input input/real/rhp.docx \
-  --output output/real_rhp_redacted.docx \
-  --predictions evaluation/real_rhp_predictions.json \
-  --report evaluation/real_rhp_verification.json
-```
-
-Adding a type: add a `PIIType` member, a detector returning an `Entity` with
-precise offsets, its call in `PIIDetector.detect`, a branch in
-`ReplacementRegistry.replacement_for`, and tests. Report tables iterate
-`SUPPORTED_TYPES`, so the new category appears in the metrics automatically.
 
 ## Notes
 
