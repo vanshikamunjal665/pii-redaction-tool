@@ -1,0 +1,268 @@
+{
+  "source": "input\\synthetic_rhp_fixture.docx",
+  "output": "output\\redacted_rhp.docx",
+  "seed": 1337,
+  "prediction_count": 26,
+  "predictions": [
+    {
+      "text": "Acme Technologies Pvt. Ltd.",
+      "type": "ORG",
+      "start": 0,
+      "end": 27,
+      "part": "word/document.xml:p0004",
+      "context": "Acme Technologies Pvt. Ltd.",
+      "score": 0.98,
+      "detector": "legal-suffix"
+    },
+    {
+      "text": "Rashi Patil",
+      "type": "PERSON",
+      "start": 0,
+      "end": 11,
+      "part": "word/document.xml:p0006",
+      "context": "Rashi Patil",
+      "score": 0.95,
+      "detector": "name-heuristic"
+    },
+    {
+      "text": "221B, Green Park, New Delhi, Delhi 110001",
+      "type": "ADDRESS",
+      "start": 0,
+      "end": 41,
+      "part": "word/document.xml:p0008",
+      "context": "221B, Green Park, New Delhi, Delhi 110001",
+      "score": 0.96,
+      "detector": "address-context"
+    },
+    {
+      "text": "rashi.patil@gmail.com",
+      "type": "EMAIL",
+      "start": 0,
+      "end": 21,
+      "part": "word/document.xml:p0010",
+      "context": "rashi.patil@gmail.com",
+      "score": 1.0,
+      "detector": "regex-email"
+    },
+    {
+      "text": "+91 98765 43210",
+      "type": "PHONE",
+      "start": 0,
+      "end": 15,
+      "part": "word/document.xml:p0012",
+      "context": "+91 98765 43210",
+      "score": 1.0,
+      "detector": "context-phone"
+    },
+    {
+      "text": "14/08/1998",
+      "type": "DOB",
+      "start": 0,
+      "end": 10,
+      "part": "word/document.xml:p0014",
+      "context": "14/08/1998",
+      "score": 1.0,
+      "detector": "context-dob"
+    },
+    {
+      "text": "Rashi Patil",
+      "type": "PERSON",
+      "start": 55,
+      "end": 66,
+      "part": "word/document.xml:p0015",
+      "context": "The issuer, Acme Technologies Pvt. Ltd., confirms that Rashi Patil is the contact person.",
+      "score": 0.95,
+      "detector": "name-heuristic"
+    },
+    {
+      "text": "Acme Technologies Pvt. Ltd.",
+      "type": "ORG",
+      "start": 12,
+      "end": 39,
+      "part": "word/document.xml:p0015",
+      "context": "The issuer, Acme Technologies Pvt. Ltd., confirms that Rashi Patil is the contact person.",
+      "score": 0.98,
+      "detector": "legal-suffix"
+    },
+    {
+      "text": "+91-98765-43210",
+      "type": "PHONE",
+      "start": 72,
+      "end": 87,
+      "part": "word/document.xml:p0016",
+      "context": "Registered office: 221B, Green Park, New Delhi, Delhi 110001; telephone +91-98765-43210.",
+      "score": 1.0,
+      "detector": "context-phone"
+    },
+    {
+      "text": "221B, Green Park, New Delhi, Delhi 110001",
+      "type": "ADDRESS",
+      "start": 19,
+      "end": 60,
+      "part": "word/document.xml:p0016",
+      "context": "Registered office: 221B, Green Park, New Delhi, Delhi 110001; telephone +91-98765-43210.",
+      "score": 0.96,
+      "detector": "address-context"
+    },
+    {
+      "text": "rashi.patil@gmail.com",
+      "type": "EMAIL",
+      "start": 7,
+      "end": 28,
+      "part": "word/document.xml:p0017",
+      "context": "Email: rashi.patil@gmail.com",
+      "score": 1.0,
+      "detector": "regex-email"
+    },
+    {
+      "text": "123-45-6789",
+      "type": "SSN",
+      "start": 0,
+      "end": 11,
+      "part": "word/document.xml:p0022",
+      "context": "123-45-6789",
+      "score": 1.0,
+      "detector": "regex-ssn"
+    },
+    {
+      "text": "4111 1111 1111 1111",
+      "type": "CREDIT_CARD",
+      "start": 0,
+      "end": 19,
+      "part": "word/document.xml:p0024",
+      "context": "4111 1111 1111 1111",
+      "score": 1.0,
+      "detector": "luhn"
+    },
+    {
+      "text": "192.168.1.10",
+      "type": "IP",
+      "start": 0,
+      "end": 12,
+      "part": "word/document.xml:p0026",
+      "context": "192.168.1.10",
+      "score": 1.0,
+      "detector": "ipv4-validation"
+    },
+    {
+      "text": "Northstar Foods Limited",
+      "type": "ORG",
+      "start": 0,
+      "end": 23,
+      "part": "word/document.xml:p0028",
+      "context": "Northstar Foods Limited",
+      "score": 0.98,
+      "detector": "legal-suffix"
+    },
+    {
+      "text": "John Doe",
+      "type": "PERSON",
+      "start": 10,
+      "end": 18,
+      "part": "word/document.xml:p0030",
+      "context": "Director: John Doe",
+      "score": 0.95,
+      "detector": "context-name"
+    },
+    {
+      "text": "Rashi Patil",
+      "type": "PERSON",
+      "start": 11,
+      "end": 22,
+      "part": "word/document.xml:p0031",
+      "context": "Signatory: Rashi Patil",
+      "score": 0.95,
+      "detector": "context-name"
+    },
+    {
+      "text": "John Doe",
+      "type": "PERSON",
+      "start": 22,
+      "end": 30,
+      "part": "word/document.xml:p0032",
+      "context": "Authorised signatory: John Doe",
+      "score": 0.95,
+      "detector": "context-name"
+    },
+    {
+      "text": "221B, Green Park, New Delhi, Delhi 110001",
+      "type": "ADDRESS",
+      "start": 37,
+      "end": 78,
+      "part": "word/document.xml:p0043",
+      "context": "Notice may be sent to Rashi Patil at 221B, Green Park, New Delhi, Delhi 110001.",
+      "score": 0.96,
+      "detector": "address-context"
+    },
+    {
+      "text": "Rashi Patil",
+      "type": "PERSON",
+      "start": 22,
+      "end": 33,
+      "part": "word/document.xml:p0043",
+      "context": "Notice may be sent to Rashi Patil at 221B, Green Park, New Delhi, Delhi 110001.",
+      "score": 0.95,
+      "detector": "name-heuristic"
+    },
+    {
+      "text": "Northstar Foods Limited",
+      "type": "ORG",
+      "start": 0,
+      "end": 23,
+      "part": "word/document.xml:p0044",
+      "context": "Northstar Foods Limited is a separate synthetic organisation.",
+      "score": 0.98,
+      "detector": "legal-suffix"
+    },
+    {
+      "text": "+1-202-555-0147",
+      "type": "PHONE",
+      "start": 17,
+      "end": 32,
+      "part": "word/document.xml:p0045",
+      "context": "Alternate phone: +1-202-555-0147",
+      "score": 1.0,
+      "detector": "context-phone"
+    },
+    {
+      "text": "192.168.1.10",
+      "type": "IP",
+      "start": 13,
+      "end": 25,
+      "part": "word/document.xml:p0046",
+      "context": "IP endpoint: 192.168.1.10",
+      "score": 1.0,
+      "detector": "ipv4-validation"
+    },
+    {
+      "text": "+91 98765 43210",
+      "type": "PHONE",
+      "start": 30,
+      "end": 45,
+      "part": "word/header1.xml:p0000",
+      "context": "Acme Technologies Pvt. Ltd. | +91 98765 43210",
+      "score": 1.0,
+      "detector": "context-phone"
+    },
+    {
+      "text": "Acme Technologies Pvt. Ltd.",
+      "type": "ORG",
+      "start": 0,
+      "end": 27,
+      "part": "word/header1.xml:p0000",
+      "context": "Acme Technologies Pvt. Ltd. | +91 98765 43210",
+      "score": 0.98,
+      "detector": "legal-suffix"
+    },
+    {
+      "text": "rashi.patil@gmail.com",
+      "type": "EMAIL",
+      "start": 48,
+      "end": 69,
+      "part": "word/footer1.xml:p0000",
+      "context": "Confidential synthetic demonstration | Contact: rashi.patil@gmail.com | Page 1",
+      "score": 1.0,
+      "detector": "regex-email"
+    }
+  ]
+}

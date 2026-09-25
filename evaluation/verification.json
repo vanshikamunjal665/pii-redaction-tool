@@ -1,0 +1,15 @@
+{
+  "input": "input\\synthetic_rhp_fixture.docx",
+  "output": "output\\redacted_rhp.docx",
+  "output_reopened": true,
+  "paragraph_like_units_checked": 49,
+  "prediction_count": 26,
+  "residual_original_values": [],
+  "text_residual_original_values": [],
+  "package_xml_residual_original_values": [],
+  "hyperlink_targets_checked": [
+    "mailto:jagvi.morar@example.com"
+  ],
+  "stale_original_email_hyperlinks": [],
+  "passed": true
+}
