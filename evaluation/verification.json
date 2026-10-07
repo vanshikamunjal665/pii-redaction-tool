@@ -3,7 +3,7 @@
   "output": "output\\redacted_rhp.docx",
   "output_reopened": true,
   "input_sha256": "2cb5c6183074ff6ea6e20a583691b39c6f608d7265f956392f475cf646c4d068",
-  "output_sha256": "2bb6497b5bd1488fa52aeead7a910ed7d7a489e44700be12cc38cb2992a6647f",
+  "output_sha256": "f94b48e48eb7a21d4c52059f6c4f0c8aed651dc478c516d2e09c22b3405fd96f",
   "paragraph_like_units_checked": 49,
   "prediction_count": 26,
   "distinct_predicted_values": 13,

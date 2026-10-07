@@ -101,9 +101,7 @@ DOB_CONTEXT_RE = re.compile(
     r"\bbirth\s*date\b|\bborn\b)"
 )
 
-# Legal suffixes are the strongest organization signal.  Weak business
-# suffixes (for example ``Services`` or ``Corporation``) are handled separately
-# because they also occur in ordinary prose.
+
 ORG_LEGAL_SUFFIX_PATTERN = (
     r"(?<![A-Za-z0-9])(?:Private\s+Limited|Pvt\.?\s*Ltd\.?|Limited|Ltd\.?|LLP|LLC|Inc\.?|"
     r"Incorporated|Corporation|Corp\.?|Co\.|P\.C\.?|PLC|GmbH|S\.A\.?|"
@@ -115,8 +113,7 @@ ORG_BUSINESS_SUFFIX_PATTERN = (
     r"Associates|Partners|Partnership|Consultants|Advisors|Advisers)(?![A-Za-z0-9])"
 )
 ORG_TOKEN_PATTERN = r"(?:[A-Z][A-Za-z0-9&'’().-]*|\([A-Z][A-Za-z0-9&'’().-]*\)|\d+|and|of|the|for|&)"
-# Retained as a public-ish constant for callers that want the complete suffix
-# vocabulary, but the main matcher below uses the stronger legal form.
+
 ORG_SUFFIX_PATTERN = rf"(?:{ORG_LEGAL_SUFFIX_PATTERN}|{ORG_BUSINESS_SUFFIX_PATTERN})"
 ORG_RE = re.compile(
     rf"(?<![A-Za-z0-9])(?:(?:{ORG_TOKEN_PATTERN})\s+){{1,10}}"
@@ -126,10 +123,7 @@ ORG_BUSINESS_RE = re.compile(
     rf"(?<![A-Za-z0-9])(?:(?:{ORG_TOKEN_PATTERN})\s+){{1,8}}"
     rf"{ORG_BUSINESS_SUFFIX_PATTERN}(?![A-Za-z0-9])"
 )
-# Formatting variants in the source include all-caps promoter lists.  Keep a
-# separate case-insensitive matcher for those units instead of globally
-# ignoring case, which would turn ordinary prose such as ``prepared ... by``
-# into an organization candidate.
+
 ORG_UPPER_RE = re.compile(
     rf"(?<![A-Za-z0-9])(?:(?:{ORG_TOKEN_PATTERN})\s+){{1,10}}"
     rf"{ORG_LEGAL_SUFFIX_PATTERN}(?![A-Za-z0-9])",
@@ -206,10 +200,6 @@ ROLE_AFTER_NAME_RE = re.compile(
     r"contact\s+person|beneficial\s+owner)\b"
 )
 
-# A capitalised sequence is a useful high-recall candidate only when a
-# person-oriented trigger or a table label surrounds it.  The cleanup function
-# below removes headings, role phrases, organization names, and all-caps
-# prospectus labels.
 PERSON_SEQUENCE_RE = re.compile(
     r"(?<![A-Za-z0-9])"
     r"(?P<value>(?:[A-Z][A-Za-z'’.-]*|[A-Z]\.|[A-Z]{2,5})"
@@ -233,9 +223,6 @@ PERSON_TRANSFER_CUE_RE = re.compile(
     r"(?i)\btransfer\s+of\s+shares?\s+(?:to|from|by)\s+"
 )
 
-# A small general-purpose first-name list is used only for a bare,
-# context-free two/three-word candidate.  It is a precision-oriented fallback,
-# not a claim that these are the only names in a language or region.
 PERSON_FIRST_NAMES = {
     "aarav", "aditi", "amaya", "ananya", "arjun", "ashwin", "bhavya",
     "charlotte", "daniel", "david", "deepak", "elena", "emily", "george",
@@ -244,9 +231,7 @@ PERSON_FIRST_NAMES = {
     "patel", "priya", "rashi", "ravi", "rohan", "sarah", "sneha", "sophia",
     "smith", "vikram", "yash",
 }
-# Section titles and defined terms that are title-cased exactly like a person
-# name.  A cue such as ``see "General Information"`` must not be read as a
-# name, and these words must not seed document-level name propagation.
+
 PERSON_HEADING_WORDS = {
     "general", "information", "risk", "factors", "objects", "industry",
     "overview", "business", "management", "corporate", "governance",
@@ -345,8 +330,7 @@ ADDRESS_LABEL_RE = re.compile(
     r"office\s+address|home\s+address|mailing\s+address|address|"
     r"contact\s+details?)\b\s*(?:(?:is|at)\s+|:\s*)"
 )
-# A label/cue is deliberately stricter than a bare mention of ``office``.
-# It marks the beginning of a value which may be split across table cells.
+
 ADDRESS_CUE_RE = re.compile(
     r"(?i)\b(?:registered\s+office|corporate\s+office|principal\s+office|"
     r"office\s+address|home\s+address|mailing\s+address|address|"
@@ -362,8 +346,7 @@ ADDRESS_FIELD_BOUNDARY_RE = re.compile(
     r"contact\s+person)\s*:"
 )
 POSTAL_CODE_RE = re.compile(r"(?<![\w])\d{3}\s?\d{3}(?![\w])")
-# Include ordinals and alphanumeric house/flat identifiers.  The old pattern
-# started at the digits in ``10th`` and left ``th`` outside the address span.
+
 ADDRESS_NUMBER_RE = re.compile(
     r"(?<!\w)(?:[A-Z]\.\s*)?(?:[A-Z]?\d{1,4}[A-Za-z]{0,3}"
     r"(?:[-/]\d+)?)(?=\s|[,.;])",
@@ -400,10 +383,6 @@ def _has_local_dob_context(text: str, start: int, end: int) -> bool:
     matches = list(DOB_CONTEXT_RE.finditer(before))
     if matches:
         between = before[matches[-1].end() :]
-        # A sentence boundary, another date, or a different field label means
-        # the context belongs to a neighboring value.  A semicolon is allowed
-        # only when it is followed by a fresh birth label; otherwise
-        # ``DOB: 01/01/1990; 02/02/1991`` must not label the second value.
         semicolon = between.find(";")
         semicolon_is_safe = semicolon < 0 or bool(
             DOB_CONTEXT_RE.search(between[semicolon + 1 :])
@@ -507,9 +486,6 @@ def detect_ssns(text: str, part: str = "body") -> list[Entity]:
     for match in SSN_RE.finditer(text):
         value = match.group("value")
         digits = _digits(value)
-        # A contiguous nine-digit value needs an SSN context signal.  The
-        # separated forms are validated independently and are unlikely to be
-        # ordinary financial identifiers.
         separated = bool(re.search(r"[- ]", value))
         nearby = text[max(0, match.start() - 45) : match.end() + 45]
         contextual = bool(re.search(r"(?i)\b(?:ssn|social\s+security)\b", nearby))
@@ -529,9 +505,6 @@ def detect_credit_cards(text: str, part: str = "body") -> list[Entity]:
         value = match.group("value")
         if not _luhn_valid(value):
             continue
-        # A Luhn-valid sixteen-digit string is not proof of a card.  The policy
-        # treats identifier numbers as non-PII, so an identifier label in the
-        # lead-in suppresses the match unless a card word is also present.
         lead_in = text[max(0, match.start() - 45) : match.start()]
         if CARD_IDENTIFIER_CONTEXT_RE.search(lead_in) and not CARD_CONTEXT_RE.search(
             text[max(0, match.start() - 45) : match.end() + 45]
@@ -552,9 +525,6 @@ def detect_phones(text: str, part: str = "body") -> list[Entity]:
             continue
         if _looks_like_date(value):
             continue
-        # Only the text *before* the number can label it.  A contact word that
-        # happens to appear later in the sentence ("Ticket No. 9876543210,
-        # please contact us") describes the sentence, not the number.
         lead_in = text[max(0, match.start() - 45) : match.start()]
         has_country_code = value.lstrip().startswith("+")
         has_phone_context = bool(
@@ -625,9 +595,6 @@ def detect_dobs(text: str, part: str = "body") -> list[Entity]:
 
 
 def _clean_name(value: str) -> Optional[str]:
-    # A capitalized label may be followed by a new sentence.  Do not let a
-    # name rule consume that next sentence (for example ``Jane Smith. Green
-    # Park``); initials such as ``J. Smith`` are left intact.
     sentence_boundary = re.search(r"\b[A-Za-z]{2,}\.(?=\s+[A-Z])", value)
     if sentence_boundary:
         value = value[: sentence_boundary.end() - 1]
@@ -638,9 +605,6 @@ def _clean_name(value: str) -> Optional[str]:
     if not 2 <= len(tokens) <= 4:
         return None
 
-    # Prospectus headings and role phrases are often title-cased in the same
-    # way as names.  An all-caps heading is never accepted by the fallback
-    # rule; title-case headings are filtered through the explicit stop list.
     if value.isupper():
         return None
     normalized = [token.casefold().strip(".,") for token in tokens]
@@ -654,12 +618,8 @@ def _clean_name(value: str) -> Optional[str]:
         for token in tokens
     ):
         return None
-    # A name made only of section-title/defined-term words is prose, not a
-    # person ("General Information", "Risk Factors").
     if all(token in PERSON_HEADING_WORDS for token in normalized):
         return None
-    # Document references such as "MoA dated June" or "shareholders agreement"
-    # are reference phrases, never people.
     if any(token in PERSON_DOCUMENT_WORDS for token in normalized):
         return None
     if not all(re.fullmatch(r"[A-Za-z'’.-]+", token) for token in tokens):
@@ -676,10 +636,6 @@ def _add_name_candidate(
     token_matches = list(re.finditer(r"[A-Za-z][A-Za-z'’.-]*", raw))
     if len(token_matches) < 2:
         return
-
-    # Try the longest prefix first.  This handles a rule that captured a role
-    # or field label after the name (``Chitra Raste Website``) while retaining
-    # the exact source offsets of the name itself.
     chosen: Optional[tuple[str, int, int]] = None
     for length in range(min(4, len(token_matches)), 1, -1):
         first = token_matches[0]
@@ -719,8 +675,6 @@ def _person_unit_is_name_like(text: str) -> bool:
     if ADDRESS_STRONG_KEYWORD_RE.search(value) or ADDRESS_WEAK_KEYWORD_RE.search(value):
         return False
     if re.search(r"[,:;()\[\]{}]", value):
-        # Footnote markers and a single trailing separator are harmless; an
-        # internal comma/semicolon usually means a list or neighboring field.
         trimmed = re.sub(r"[*&^]+", "", value.strip()).rstrip(",;")
         if re.search(r"[,;:()\[\]{}]", trimmed):
             return False
@@ -728,22 +682,13 @@ def _person_unit_is_name_like(text: str) -> bool:
 
 
 def _person_trigger_segments(text: str) -> list[tuple[int, str]]:
-    """Return only short spans following person-oriented markers.
-
-    Generic prospectus prose often contains ``being`` or ``including`` in a
-    non-person sense.  A marker is therefore accepted only when the preceding
-    clause supplies a person/role signal, except for the explicit contact and
-    allotment/consent forms.
-    """
 
     person_prior = re.compile(
         r"(?i)\b(?:chairman|director|promoter|secretary|officer|auditor|"
         r"engineer|management|manager|kmp|sm|person|shareholder|individual|"
         r"consent|expert)\b"
     )
-    # The fourth element marks a list-style cue whose value continues past a
-    # comma (``alloted to A, B and C``).  Value extraction itself is driven by
-    # the name-sequence scanner, so an early comma stop is not needed.
+
     markers: tuple[tuple[re.Pattern[str], int, bool, bool], ...] = (
         (re.compile(r"(?i)\bcontact\s+person\b"), 150, False, False),
         (re.compile(r"(?i)\bbeing\s*,?\s*"), 110, True, False),
@@ -766,10 +711,6 @@ def _person_trigger_segments(text: str) -> list[tuple[int, str]]:
                     continue
             start = match.end()
             tail = text[start : start + window]
-            # Stop at a field separator or sentence boundary.  A period in an
-            # initial (``S.``) is retained by requiring whitespace after it.
-            # A comma only ends the segment for markers that introduce a single
-            # value; list-style cues keep scanning so every listed name is kept.
             stop = re.search(
                 r"(?i)(?:;|(?<![A-Z])\.(?=\s+[A-Z])|(?<![A-Z])\.(?=\s*$)|"
                 r"\b(?:telephone|email| website)\s*:)",
@@ -780,8 +721,6 @@ def _person_trigger_segments(text: str) -> list[tuple[int, str]]:
             if tail.strip():
                 segments.append((start, tail))
 
-    # A consent sentence often says "consent ... from <natural person>" rather
-    # than using one of the generic markers above.
     for match in re.finditer(r"(?i)\bfrom\b", text):
         prior = text[max(0, match.start() - 150) : match.start()]
         if not re.search(r"(?i)\b(?:consent|name|secretary|auditor|engineer)\b", prior):
@@ -797,12 +736,6 @@ def _person_trigger_segments(text: str) -> list[tuple[int, str]]:
 
 
 def _name_token_gap_ok(between: str) -> bool:
-    """Return whether the gap between two name tokens is acceptable.
-
-    A comma, semicolon, ampersand, or sentence period separates names, but the
-    period of an initial (``Karunakar N. Bhandary``) is part of the name and
-    must not be treated as a boundary.
-    """
 
     without_initials = re.sub(r"(?<![A-Za-z])[A-Z]\.", "", between)
     return re.search(r"[.;:!?&=]", without_initials) is None
@@ -821,9 +754,6 @@ def _iter_person_sequences(segment: str) -> list[tuple[int, int]]:
         for length in range(min(4, len(tokens) - index), 1, -1):
             last = tokens[index + length - 1]
             between = segment[first.end() : last.start()]
-            # Commas and slashes separate names in contact/promoter lists.  An
-            # ampersand is deliberately not accepted: it usually joins an
-            # organization (``Kirtane & Pandit``) rather than two people.
             if not _name_token_gap_ok(between):
                 continue
             raw = segment[first.start() : last.end()]
@@ -834,9 +764,6 @@ def _iter_person_sequences(segment: str) -> list[tuple[int, int]]:
         if chosen is not None:
             candidates.append((chosen[0], chosen[1], -(chosen[1] - chosen[0])))
 
-    # Prefer a longer candidate at the same start, then remove candidates
-    # nested in an already selected span.  This lets ``Kushal Subbayya Hegde``
-    # survive when a preceding generic token would otherwise hide it.
     candidates.sort(key=lambda item: (item[0], item[2], -item[1]))
     selected: list[tuple[int, int]] = []
     for start, end, _ in candidates:
@@ -847,14 +774,6 @@ def _iter_person_sequences(segment: str) -> list[tuple[int, int]]:
 
 
 def _clean_transfer_name(value: str) -> Optional[str]:
-    """Validate a person name taken from a share-transfer row.
-
-    The surrounding sentence is explicit ("transfer of shares to <name>"), so
-    the remaining risk is a neighbouring capitalised acronym or regulation
-    name.  Every token must therefore look like a name token: a capitalised
-    word, an initial with a period, or a very short all-caps initialism.
-    """
-
     value = re.sub(r"\s+", " ", value).strip(" \t,;:-.")
     tokens = value.split()
     if not 2 <= len(tokens) <= 4:
@@ -874,8 +793,6 @@ def _clean_transfer_name(value: str) -> Optional[str]:
             continue
         if re.fullmatch(r"[A-Z][a-z][A-Za-z'’-]*", token):
             continue
-        # Short all-caps initialisms such as ``DM``/``SA`` occur in Indian
-        # name records; a longer acronym is a regulator or a defined term.
         if re.fullmatch(r"[A-Z]{1,3}", token):
             continue
         return None
@@ -926,9 +843,6 @@ def detect_persons(
     recent_context = context_prefix[-600:]
     has_table_context = bool(PERSON_TABLE_CONTEXT_RE.search(recent_context))
     for segment_start, segment in _person_trigger_segments(text):
-        # A cue can be followed by a cross-reference instead of a person:
-        # ``see "General Information" on pages 74 and 26``.  Quoted spans and
-        # page references are not name values.
         if re.match(r"\s*[\"“‘']", segment):
             continue
         if re.match(r"\s*(?:page|pages|section|chapter|part)\b", segment, re.IGNORECASE):
@@ -943,9 +857,7 @@ def detect_persons(
                 "context-name",
             )
 
-    # A share-transfer row names the transferor/transferee without any role
-    # label, so the whole row after the explicit cue is scanned with the
-    # stricter transfer-name validator.
+
     for match in PERSON_TRANSFER_CUE_RE.finditer(text):
         start = match.end()
         tail = text[start : start + 200]
@@ -977,10 +889,6 @@ def detect_persons(
                 "table-name",
             )
 
-    # A bare name is accepted only when its first token is in a small general
-    # first-name list and it is not an organization-like phrase.  Scanning
-    # tokens instead of greedily matching a whole capitalized phrase avoids
-    # losing ``Rashi Patil`` when a label such as ``Contact`` precedes it.
     token_re = re.compile(r"[A-Z](?:[A-Za-z'’.-]*[A-Za-z'’])?")
     tokens = list(token_re.finditer(text))
     for index, first_token in enumerate(tokens):
@@ -1094,9 +1002,7 @@ ORG_GENERIC_WORDS = {
     "ifrs",
 }
 
-# Words that make a weak-suffix candidate look like a person rather than an
-# organization.  This is intentionally conservative; the contextual PERSON
-# rules remain the authority for names.
+
 ORG_PERSON_LIKE_WORDS = {
     "company",
     "secretary",
@@ -1121,11 +1027,6 @@ def _org_flatten(value: str) -> str:
 def _strip_org_leading_context(value: str) -> tuple[str, int]:
     """Remove labels which precede a legal name in a prospectus sentence."""
 
-    # Keep the original offset so the caller can emit the actual name rather
-    # than a label such as ``Company KSH International Limited``.
-    # ``The`` is normally an article in a prospectus sentence, but it is part
-    # of a few legal names (``The Federal Bank Limited``).  Preserve that
-    # capitalized form while still trimming a lowercase ``the`` prefix.
     if value.startswith("The ") and re.search(
         rf"(?:{ORG_LEGAL_SUFFIX_PATTERN})\s*$", value[4:], flags=re.IGNORECASE
     ):
@@ -1177,9 +1078,6 @@ def _clean_org(value: str) -> Optional[str]:
     if not tokens:
         return None
 
-    # A legal suffix is enough for a named entity, provided the name is not a
-    # generic fragment (``India Limited``) or a sentence fragment ending in
-    # ``Company`` after a person's name.
     has_legal_suffix = bool(
         re.search(
             rf"(?:{ORG_LEGAL_SUFFIX_PATTERN})\s*$",
@@ -1196,9 +1094,6 @@ def _clean_org(value: str) -> Optional[str]:
     prefix_tokens = prefix.split()
 
     if not has_legal_suffix:
-        # Weak business words need at least one distinctive proper-name token
-        # and a second token in the candidate.  This rejects ``Cloud Services``
-        # and ``Our Group`` without dropping ``Nuvama Wealth Management``.
         if not prefix_tokens:
             return None
         if len(prefix_tokens) == 1 and prefix_tokens[0].casefold().strip(".,") in ORG_GENERIC_WORDS:
@@ -1218,9 +1113,6 @@ def _clean_org(value: str) -> Optional[str]:
     ) and not has_legal_suffix:
         return None
 
-    # A legal name consisting solely of a generic suffix/head word is not an
-    # organization.  Acronyms (``BSE Limited``) and multi-word proper names
-    # remain eligible.
     distinctive = [
         token
         for token in prefix_tokens
@@ -1243,8 +1135,6 @@ def _org_entity(
     cleaned = _clean_org(raw_value)
     if cleaned is None:
         return None
-    # Locate the cleaned value in the raw match after whitespace normalization.
-    # The source can contain tabs in table cells, so search token-by-token.
     raw_normalized_start = match_start
     token_pattern = r"\s+".join(re.escape(token) for token in cleaned.split())
     match = re.search(token_pattern, raw_value, flags=re.IGNORECASE)
@@ -1319,10 +1209,7 @@ def _contextual_organization_lists(text: str, part: str) -> list[Entity]:
             connector = re.match(r"(?i)^(?:and|or)\s+", raw_segment.lstrip())
             if connector is not None:
                 segment_abs = tail_start + segment_start + leading + len(connector.group(0))
-            # A list item can contain a legal name followed by a named
-            # division/trading name without punctuation.  The legal entity is
-            # already covered by ORG_RE; inspect only the words after its
-            # suffix (for example ``Sterlite Copper``).
+           
             suffix_match = re.search(
                 ORG_LEGAL_SUFFIX_PATTERN,
                 segment,
@@ -1402,10 +1289,6 @@ def _is_all_caps_org_match(value: str) -> bool:
     letters = [char for char in value if char.isalpha()]
     return bool(letters) and all(not char.islower() for char in letters)
 
-
-# One run of all-caps words inside a case-insensitive match.  The uppercase
-# patterns must be trimmed to such a run, because their token pattern also
-# matches lowercase lead-in words ("The Promoters of our Company are ...").
 _ORG_ALL_CAPS_RUN_RE = re.compile(
     r"(?<![A-Za-z0-9])"
     r"[A-Z][A-Z0-9&'’.,/-]*"
@@ -1490,10 +1373,6 @@ def _address_score(line: str, context_hint: bool = False) -> int:
             score += 2
     return score
 
-
-# A location preposition introduces the value that follows it, so a sentence
-# that ends with ``... at 221B, Green Park, New Delhi, Delhi 110001`` is an
-# address even though the sentence itself carries no address keyword.
 LOCATION_PREPOSITION_RE = re.compile(
     r"(?i)\b(?:located\s+at|situated\s+at|premises\s+at|adjacent\s+to|next\s+to|"
     r"at|near|opposite|off|above|behind|beside)\s+(?=[A-Z0-9])"
@@ -1530,14 +1409,6 @@ def _address_context_hint(context_prefix: str) -> bool:
 
 
 def _has_structural_address_number(line: str) -> bool:
-    """Return whether a numeric token looks like an address identifier.
-
-    The generic numeric regex also sees dates, years, percentages, and
-    registration identifiers.  A token is structural when it has a slash or
-    letter suffix, is an ordinal, is adjacent to a house/plot keyword, or is a
-    value at the beginning of a short address-looking line.
-    """
-
     for match in ADDRESS_NUMBER_RE.finditer(line):
         token = match.group(0)
         digits = _digits(token)
@@ -1593,11 +1464,7 @@ def _address_value_start(line: str, start: int, end: int, labelled: bool, contex
     inner = _address_value_start_inner(line, start, end, labelled, context_hint)
     if inner <= start:
         return start
-    # ``Pushpakamal Apartment, Flat - 1, S. no. 245/104, ...`` and ``Unit no.
-    # 1601, B- wing BKC, ...`` both open with a building or unit designator that
-    # belongs to the address.  The structural rules below deliberately prefer a
-    # number or a later keyword as the start, which would leave the building
-    # name in the clear, so walk the start back over such a designator.
+
     head = line[start:inner]
     if _opens_with_address_designator(head):
         return start
@@ -1631,8 +1498,6 @@ def _opens_with_address_designator(head: str) -> bool:
             continue
         if token.isdigit():
             continue
-        # An organization name in the head (``ICICI Bank,``) must stay trimmable,
-        # so every other token has to be a capitalized building or number.
         if not token[:1].isupper():
             return False
     return True
@@ -1642,11 +1507,6 @@ def _address_value_start_inner(
     line: str, start: int, end: int, labelled: bool, context_hint: bool
 ) -> int:
     """Find the value start, excluding a leading organization label."""
-
-    # The cue regex consumes at most one preposition, so a value such as
-    # ``Registered Office is at 11/3, ...`` can begin with the leftover ``at``.
-    # Cue words are not part of the address; location lead-ins such as
-    # ``Opposite``/``Near`` are, and are handled below.
     lead_in = re.match(
         r"(?i)\s*(?:(?:is\s+)?(?:located|situated|found|stationed)\s+at\s+"
         r"|(?:is|are|was|were)\s+at\s+|at\s+|of\s+)",
@@ -1664,9 +1524,6 @@ def _address_value_start_inner(
     if located is not None:
         return start + located.end()
 
-    # Prose that ends with a location preposition introduces the value after it.
-    # ``Notice may be sent to <name> at 221B, Green Park, ...`` is a sentence
-    # whose address is the tail only; the sentence is not the address.
     introduced = LOCATION_PREPOSITION_RE.search(line, start, end)
     if introduced is not None:
         tail_start = introduced.end()
@@ -1677,17 +1534,12 @@ def _address_value_start_inner(
     first_strong = ADDRESS_STRONG_KEYWORD_RE.search(line, start, end)
     if first_strong is not None:
         prefix = line[start : first_strong.start()]
-        # A value that opens with the address itself (``Pushpakamal Apartment,
-        # Flat - 1, S. no. 245/104, ...``) has nothing to trim: the first strong
-        # keyword is the start of the address, and a later flat/plot marker must
-        # not move the start forward past the building name.
+
         if first_strong.start() - start <= 2:
             return start
         if re.search(
             r"(?i)\b(?:opposite|above|behind|near|next|adjacent|off)\b", prefix
         ):
-            # These are part of the physical-address description, not an
-            # organization label to discard.
             return start
         building_prefix = re.search(
             r"([A-Z][A-Za-z0-9&'’.-]*\s+"
@@ -1712,10 +1564,6 @@ def _address_value_start_inner(
                 candidate += 1
             if candidate < first_strong.start():
                 return start + candidate
-        # Common table cells place a bank/organization name before the actual
-        # building address without a legal suffix (for example ``ICICI Bank,
-        # 3rd Floor``).  Strip only this narrow prefix; a department that follows
-        # the bank name belongs to the address row.
         bank_prefix = re.match(
             r"(?i)^(?:the\s+)?[A-Z][A-Za-z&'’.-]*\s+bank\s*,\s*",
             line[start:end],
@@ -1727,10 +1575,6 @@ def _address_value_start_inner(
     if explicit_prefix is not None:
         return start + explicit_prefix.start()
 
-    # A short, self-contained address with a PIN should retain its complete
-    # value rather than starting at the first street keyword.  This covers
-    # building names (``Pratik Bunglow, Senapati Bapat Road``) and flat/unit
-    # identifiers (``C-101, Embassy 247``).
     if POSTAL_CODE_RE.search(line, start, end) and len(line[start:end].strip()) <= 190:
         return start
     return _address_span_start(line, start, end, labelled, context_hint)
@@ -1745,14 +1589,9 @@ def _address_span_start(line: str, start: int, end: int, labelled: bool, context
     candidates: list[int] = []
     prefix = ADDRESS_PREFIX_RE.search(line, start, end)
     if prefix:
-        # An explicit flat/plot/gat marker is the most reliable value start;
-        # do not let a broad preceding prose phrase win the minimum.
         return prefix.start()
     for match in ADDRESS_NUMBER_RE.finditer(line, start, end):
         if _has_structural_address_number(line):
-            # A date in a long prose paragraph is not a house number.  Accept
-            # numeric starts only when they are near an address keyword or at
-            # the beginning of the line.
             before = line[max(start, match.start() - 35) : match.start()]
             after = line[match.end() : min(end, match.end() + 35)]
             if (
@@ -1774,18 +1613,14 @@ def _address_span_start(line: str, start: int, end: int, labelled: bool, context
         return start
     keyword = ADDRESS_STRONG_KEYWORD_RE.search(line, start, end)
     if keyword and not re.match(r"(?i)^house$", line[keyword.start() : keyword.end()]):
-        # Include a short building/locality title immediately before a road or
-        # centre component (for example ``Tara Chambers, ... Road``).
+
         before = line[start : keyword.start()]
         title = re.search(r"(?:[A-Za-z][A-Za-z'’.-]*)(?:\s+[A-Za-z][A-Za-z'’.-]*){0,2}$", before)
         if title:
             candidates.append(start + title.start())
         candidates.append(keyword.start())
     if not candidates:
-        # A short continuation such as ``Pune – 411 001`` or a named
-        # building/centre is meaningful only when the caller supplied an
-        # address label.  Starting at the line boundary preserves the full
-        # continuation value in that case.
+
         return start
     return min(candidates)
 
@@ -1833,9 +1668,7 @@ def detect_addresses(
         # A short standalone cell carries its own context.
         context_hint = _address_context_hint(context_prefix) or _is_address_cell(line)
 
-        # Semicolon-separated contact fields are independent values.  Keep
-        # offsets in the original paragraph rather than recursively redetecting
-        # a substring with a different coordinate system.
+
         chunks: list[tuple[int, str]] = []
         if ";" in line:
             cursor = 0
@@ -1850,9 +1683,6 @@ def detect_addresses(
                 continue
             absolute_chunk = line_match.start() + chunk_offset
 
-            # A labelled prose paragraph can contain two complete addresses.
-            # Split at the next explicit address cue before evaluating the
-            # structural evidence for each value.
             cue_matches = list(ADDRESS_CUE_RE.finditer(chunk))
             segments: list[tuple[int, int, bool]] = []
             if cue_matches:
@@ -1879,8 +1709,6 @@ def detect_addresses(
                 has_number = _has_structural_address_number(segment)
                 has_strong = bool(ADDRESS_STRONG_KEYWORD_RE.search(segment))
                 if re.search(r"(?i)\bin[- ]house\b", segment):
-                    # ``in-house product development`` is prose, not a street
-                    # address merely because it contains the word ``house``.
                     has_strong = False
                 has_weak = bool(ADDRESS_WEAK_KEYWORD_RE.search(segment))
                 if not has_postal and not has_strong and ADDRESS_PROSE_RE.search(segment):
@@ -1902,8 +1730,7 @@ def detect_addresses(
                     or (has_strong and context_hint)
                 ):
                     continue
-                # A label alone (``our office is located``) is not an address
-                # value.  Require a street/locality component or a PIN.
+
                 if has_label and not (has_postal or has_strong):
                     continue
                 if not (
@@ -1914,11 +1741,6 @@ def detect_addresses(
                 ):
                     continue
 
-                # A postal-only value is a continuation of a labelled address;
-                # it is not independently sufficient in ordinary prose.  A value
-                # that a location preposition introduces is the exception: the
-                # sentence is not the address, the value after the preposition
-                # is, and it carries a structural number and a PIN.
                 if (
                     has_postal
                     and not has_strong
@@ -1927,9 +1749,6 @@ def detect_addresses(
                     and not (has_number and _location_introduced_value(segment))
                 ):
                     continue
-                # A long paragraph without a cue, postal code, or explicit
-                # address keyword is prose.  A long paragraph with a concrete
-                # ``Plot/House/Road`` token is handled below.
                 if len(segment) > 220 and not has_label and not has_postal and not (
                     has_strong and has_number
                 ):
@@ -1957,9 +1776,6 @@ def detect_addresses(
                     continue
 
                 global_start = absolute_chunk + segment_start + start
-                # ``strip`` above can remove leading punctuation; locate the
-                # exact remaining span in the segment rather than shifting by
-                # a guessed amount.
                 leading_trim = len(segment[start:end]) - len(segment[start:end].lstrip(" \t,;:-"))
                 global_start += leading_trim
                 global_end = global_start + len(candidate_text)
@@ -2102,10 +1918,6 @@ class PIIDetector:
         entities.extend(detect_credit_cards(text, part))
         entities.extend(detect_phones(text, part))
         if context_prefix and context_prefix.strip():
-            # A rolling neighbour context is useful for table labels, but a DOB
-            # label several paragraphs away must not validate an unrelated
-            # date in the current unit.  Only the immediately preceding line
-            # participates in DOB contextual validation.
             context_lines = context_prefix.rstrip().splitlines()
             context_line = context_lines[-1] if context_lines else ""
             prefix = context_line + "\n"

@@ -36,13 +36,6 @@ SUPPORTED_TYPES: tuple[PIIType, ...] = (
 
 @dataclass(frozen=True)
 class Entity:
-    """A detected entity and its offsets within one text unit.
-
-    Offsets are zero-based, end-exclusive character offsets in the text unit
-    passed to the detector.  ``part`` and ``context`` are retained for
-    evaluation and diagnostics, but are not required by the core detector.
-    """
-
     text: str
     pii_type: PIIType
     start: int

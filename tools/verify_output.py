@@ -1,10 +1,3 @@
-"""Verify the generated DOCX opens, is intact, and no source value survives.
-
-The report deliberately never prints a source value. Residuals are reported by
-span shape plus the location where the value still occurs, so the verification
-artifact can be shared without disclosing the data it verifies.
-"""
-
 from __future__ import annotations
 
 import argparse

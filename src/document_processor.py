@@ -43,12 +43,6 @@ def _part_name(part: Any) -> str:
 
 
 def _text_segments(paragraph: Any) -> tuple[str, list[tuple[Any, int, int]]]:
-    """Return visible text and editable ``w:t`` node ranges.
-
-    Tabs and breaks are included in offsets so a detector never sees a false
-    adjacency across a line break, while only text nodes are modified.
-    """
-
     pieces: list[str] = []
     text_nodes: list[tuple[Any, int, int]] = []
     position = 0
@@ -176,13 +170,6 @@ def extract_docx_text(path: str | Path) -> str:
 def _update_hyperlink_targets(
     document: Any, email_replacements: dict[str, str]
 ) -> None:
-    """Update both relationship targets and Word field-code mailto links.
-
-    Word documents produced by several office suites store a hyperlink either
-    as an external relationship or as a ``HYPERLINK "mailto:..."`` field
-    instruction inside ``w:instrText``.  Redacting only the former leaves the
-    original address in the package XML even when the visible text is clean.
-    """
 
     if not email_replacements:
         return
@@ -219,25 +206,12 @@ def _update_hyperlink_targets(
 
 
 def _neighbor_context(units: list[_DocxUnit], index: int, window: int = 2) -> str:
-    """Return a short rolling context for adjacent DOCX table cells.
-
-    A two-cell window is enough for labels/values split by table structure,
-    while avoiding the document-wide address/person hints that caused false
-    positives in the first real-RHP pass.  Newlines preserve logical unit
-    boundaries for the contextual detectors.
-    """
 
     recent = [unit.text for unit in units[max(0, index - window) : index] if unit.text]
     return "\n".join(recent)[-800:]
 
 
 def _value_pattern(value: str) -> Optional[str]:
-    """Build a whole-value pattern; internal whitespace is matched loosely.
-
-    Lookarounds are used instead of ``\\b`` so values that start or end with a
-    non-word character (a phone number with a ``+`` prefix, a house number) are
-    handled as well.
-    """
 
     parts = [re.escape(part) for part in value.strip().split()]
     if not parts:
@@ -246,14 +220,6 @@ def _value_pattern(value: str) -> Optional[str]:
 
 
 def contains_original_value(haystack: str, value: str) -> bool:
-    """Return whether ``value`` survives in ``haystack`` as a whole value.
-
-    A plain substring test produces false alarms that hide real ones: the
-    redacted fragment ``Broad`` (from a promoter name split across two table
-    cells) occurs inside the ordinary words ``abroad`` and ``broader`` in the
-    risk factors, while a genuine leak inside a longer word would still be
-    reported.  Matching whole values keeps the residual check meaningful.
-    """
 
     pattern = _value_pattern(value)
     return pattern is not None and bool(re.search(pattern, haystack, re.IGNORECASE))
@@ -652,7 +618,6 @@ def _propagate_document_values(
 
 
 def _reserved_values(entities: Iterable[Entity]) -> list[str]:
-    """Collect every detected source value a replacement must not reproduce."""
 
     values: list[str] = []
     for entity in entities:
